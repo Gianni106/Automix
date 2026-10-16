@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Auto-Mix</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Auto-Mix">
+<link rel="apple-touch-icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAALQAAAC0AgMAAABAo+6hAAAADFBMVEXs7vX1pSQ4vfgSFByYz08YAAABW0lEQVR42u2ZT0rEMBSHv2YqiCjOwgO4dOkBXMwV5gLiUeYsXkCPMAsP4NKlB3ChKCLozLhI1Nc2aZr5s/L34EEIH4+85KOkbbWiIByiRYsWLbqMXl5eZbnVzW2gH3jP0k98BnoGsxw9hzk4WAKPuYUAz2t0+YHPvvjyKU/66JQt3pA2nbLFG9KmU7Z4Q1p0ypZgyEZdpmwJhuh5MpS2tlhD4rS1xRoSp60t1pAobW1pGLKFLq0tDUPkSRm9OBoX0He8FNATmAymF8D9jrp8C6mTFy1atGjR/4s+DLmL2iPgfHjt7r2xj77gODpfR2dHrzr5Nen9kD+bW2+xtgNOw7gCxsPfMrp3yDZ9xsHv+IS9jCfu+m9cTXXyBbQ1pL3F9Ya1rSE2Grbkv1pYW1zUEBvWljpqSGMpU3mSoVOGRGwprp0yJGLL0K+g3hbXY0jXlkp/yESLFi26IL4Br3tLtWxgxSYAAAAASUVORK5CYII=">
+<style>
+:root{box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px);--bg:#eef0f6;--card:#fff;--fg:#14161f;--mut:#5f6578;--line:#d5d9e6;--a:#b86e00;--b:#0369a1;--on:#fff;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#12141c;--card:#1b1e2a;--fg:#eceef5;--mut:#8e93a6;--line:#2b2f40;--a:#f5a524;--b:#38bdf8;--on:#12141c;color-scheme:dark}}
+:root[data-theme="dark"]{--bg:#12141c;--card:#1b1e2a;--fg:#eceef5;--mut:#8e93a6;--line:#2b2f40;--a:#f5a524;--b:#38bdf8;--on:#12141c;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;padding:12px;background:var(--bg);color:var(--fg);font:15px/1.4 ui-rounded,-apple-system,system-ui,sans-serif;max-width:560px;margin-inline:auto}
+h1{font-size:20px;margin:4px 0 8px}
+.card{background:var(--card);border:1px solid var(--line);border-left:5px solid var(--c,var(--line));border-radius:14px;padding:12px;margin:10px 0}
+h2{font-size:16px;margin:0 0 8px;color:var(--c)}
+.row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0}
+button,.btn,select,input[type=number]{min-height:44px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--fg);font:inherit;padding:0 12px}
+.btn{display:inline-flex;align-items:center}
+button.p{background:var(--c);color:var(--on);border-color:transparent;font-weight:600}
+input[type=number]{width:84px}
+input[type=range]{width:100%;accent-color:var(--c)}
+.mut{color:var(--mut);font-size:13px}
+.pos{font-variant-numeric:tabular-nums;font-size:16px}
+.seg{display:flex;gap:4px;margin:8px 0}
+.seg i{flex:1;height:14px;border-radius:4px;background:var(--line)}
+.seg i.one{box-shadow:inset 0 -3px 0 var(--mut)}
+.seg i.on{background:var(--c)}
+#mixA,#mixB{flex:1;min-height:56px;font-size:17px;font-weight:700;background:linear-gradient(90deg,var(--a),var(--b));color:var(--on);border:0}
+#mixB{min-height:44px;font-size:14px;opacity:.8}
+#cd{font-size:22px;font-weight:700;min-height:30px;font-variant-numeric:tabular-nums}
+details{font-size:14px}
+</style>
+</head>
+<body>
+<h1>Auto-Mix prototipo</h1>
+<div class="mut">Carica un brano per deck, avvia A, poi premi MIX. BPM e inizio frase sono rilevati da soli. Se non senti nulla, disattiva il tasto silenzioso.</div>
+<div id="decks"></div>
+<section class="card">
+<div class="row"><button id="mixA">MIX A → B</button></div>
+<div id="cd"></div>
+<div id="msg" class="mut">Carica i brani per iniziare.</div>
+<details><summary>Opzioni</summary>
+<div class="row"><label>Ingresso ogni <select id="len"><option>4</option><option selected>8</option><option>16</option></select> battute</label></div>
+<div class="row"><label><input type="checkbox" id="sync" checked> Porta B al tempo di A</label></div>
+<div class="row"><label><input type="checkbox" id="bass" checked> Scambio dei bassi a metà</label></div>
+<div class="row"><label>Ritorno al tempo originale in <select id="ret"><option value="0">mai</option><option>16</option><option selected>32</option><option>64</option></select> battute</label></div>
+<div class="row"><button id="mixB">MIX B → A</button></div>
+</details>
+</section>
+<script>
+const AC=window.AudioContext||window.webkitAudioContext;
+let ctx,mixT=0;
+try{if(navigator.audioSession)navigator.audioSession.type='playback'}catch(e){}
+const $=(s,r=document)=>r.querySelector(s);
+const fmt=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
+const msg=t=>{$('#msg').textContent=t};
+const N=()=>+$('#len').value;
+const D={};
+function ens(){
+ if(!ctx){ctx=new AC();for(const k in D){const d=D[k];d.low=ctx.createBiquadFilter();d.low.type='lowshelf';d.low.frequency.value=250;d.gain=ctx.createGain();d.low.connect(d.gain);d.gain.connect(ctx.destination)}}
+ if(ctx.state!=='running')ctx.resume();
+}
+const decode=ab=>new Promise((ok,ko)=>{const r=ctx.decodeAudioData(ab,ok,ko);if(r&&r.catch)r.catch(ko)});
+/* Analisi: BPM e primo battere (primo colpo di batteria) */
+function analyze(buf){
+ const sr=buf.sampleRate,H=256,nf=Math.floor(buf.length/H),c0=buf.getChannelData(0),c1=buf.numberOfChannels>1?buf.getChannelData(1):c0,fps=sr/H;
+ const lo=new Float32Array(nf),fu=new Float32Array(nf),o=new Float32Array(nf),al=1-Math.exp(-2*Math.PI*150/sr);
+ let y=0;
+ for(let f=0;f<nf;f++){let sl=0,sf=0;for(let i=f*H,e=i+H;i<e;i++){const x=(c0[i]+c1[i])*.5;y+=al*(x-y);sl+=y*y;sf+=x*x}lo[f]=Math.sqrt(sl/H);fu[f]=Math.sqrt(sf/H)}
+ for(let f=1;f<nf;f++)o[f]=Math.max(0,lo[f]-lo[f-1])*2+Math.max(0,fu[f]-fu[f-1]);
+ const w=Math.min(nf,Math.floor(60*fps)),s=Math.max(0,Math.floor((nf-w)/2)),e=s+w;
+ const sc=b=>{const lg=60*fps/b;let t=0;for(let i=s;i<e-lg-2;i++){const p=i+lg,j=p|0,fr=p-j;t+=o[i]*(o[j]*(1-fr)+o[j+1]*fr)}return t};
+ let best=120,bv=-1;
+ for(let b=70;b<=180;b+=.5){const v=(sc(b)+.5*sc(b/2))*Math.exp(-.5*Math.pow(Math.log2(b/120)/.6,2));if(v>bv){bv=v;best=b}}
+ let b2=best,v2=-1;
+ for(let b=best-.6;b<=best+.6;b+=.02){const v=sc(b)+.5*sc(b/2);if(v>v2){v2=v;b2=b}}
+ const bpm=Math.round(b2*10)/10,bf=60*fps/b2;
+ let ph=0,pv=-1;
+ for(let q=0;q<bf;q+=.5){let t=0;for(let p=q;p<nf-1;p+=bf){const r=Math.round(p);t+=o[r]+.5*(o[r-1]||0)+.5*o[r+1]}if(t>pv){pv=t;ph=q}}
+ const bs=[];
+ for(let p=ph;p<nf-1;p+=bf){const r=Math.round(p);bs.push(o[r]+.5*(o[r-1]||0)+.5*o[r+1])}
+ const ref=[...bs].sort((x,z)=>x-z)[Math.floor(bs.length*.75)]||1;
+ let m0=0;
+ for(let m=0;m<bs.length-4;m++){if(bs[m]>=.25*ref&&bs[m+1]>=.25*ref&&bs[m+2]>=.25*ref&&bs[m+3]>=.25*ref){m0=m;break}}
+ return{bpm,off:(ph+m0*bf+.5)*H/sr};
+}
+function adv(d,t){
+ const r=d.rate,m=d.rm,x=Math.max(0,t-d.t0);
+ if(!m||t<=m.a)return x*r;
+ const dt=Math.min(t,m.b)-m.a,D=m.b-m.a;
+ let v=(m.a-d.t0)*r+r*dt+(m.to-r)*dt*dt/(2*D);
+ if(t>m.b)v+=(t-m.b)*m.to;
+ return v;
+}
+function rateAt(d,t){const m=d.rm;if(!m||t<=m.a)return d.rate;if(t>=m.b)return m.to;return d.rate+(m.to-d.rate)*(t-m.a)/(m.b-m.a)}
+function pos(d){return d.playing?Math.min(d.buf.duration,d.p0+adv(d,ctx.currentTime)):d.p0}
+function freeze(d){
+ if(!d.playing||!d.rm||ctx.currentTime<d.t0)return;
+ const t=ctx.currentTime,r=rateAt(d,t),p=pos(d),pr=d.src.playbackRate;
+ pr.cancelScheduledValues(t);pr.setValueAtTime(r,t);
+ d.p0=p;d.t0=t;d.rate=r;d.rm=null;
+}
+function stopD(d){
+ if(d.playing)d.p0=pos(d);
+ if(d.src){const s=d.src;d.src=null;try{s.stop()}catch(e){}}
+ d.playing=false;
+}
+function start(d,p,when,rate,rm){
+ stopD(d);
+ const s=ctx.createBufferSource(),pr=s.playbackRate;s.buffer=d.buf;pr.value=rate;
+ if(rm){pr.setValueAtTime(rate,rm.a);pr.linearRampToValueAtTime(rm.to,rm.b)}
+ s.connect(d.low);s.start(when,p);
+ s.onended=()=>{if(d.src===s){d.p0=pos(d);d.playing=false;d.src=null}};
+ d.src=s;d.t0=when;d.p0=p;d.rate=rate;d.rm=rm||null;d.playing=true;
+}
+function reset(d){for(const x of [d.gain.gain,d.low.gain])x.cancelScheduledValues(0);d.gain.gain.value=1;d.low.gain.value=0}
+function mk(id,c){
+ const el=document.createElement('section');el.className='card';el.style.setProperty('--c',c);
+ el.innerHTML=`<h2>Deck ${id}</h2>
+<label class="btn">Carica brano<input type="file" hidden></label>
+<div class="mut nm">Nessun brano</div>
+<div class="mut inf"></div>
+<div class="seg"></div>
+<div class="pos tm">0:00</div>
+<input class="seek" type="range" min="0" max="1" step="0.1" value="0">
+<div class="row"><button class="p play">Play</button><button class="stop">Stop</button><button class="end">Salta verso la fine</button></div>
+<details><summary>Correzioni a mano</summary>
+<div class="row"><label>BPM <input class="bpm" type="number" inputmode="decimal" step="0.1" value="120"></label>
+<button class="nud" data-d="-0.01">Inizio −10ms</button><button class="nud" data-d="0.01">Inizio +10ms</button></div></details>`;
+ $('#decks').append(el);
+ const d=D[id]={id,el,buf:null,bpm:120,off:0,src:null,t0:0,p0:0,rate:1,playing:false};
+ const sk=$('.seek',el),nm=$('.nm',el),inf=$('.inf',el);
+ const info=()=>{inf.textContent='BPM '+d.bpm.toFixed(1)+' · primo battere a '+d.off.toFixed(2)+' s'};
+ $('input[type=file]',el).onchange=async e=>{
+  const f=e.target.files[0];if(!f)return;
+  ens();nm.textContent='Caricamento di '+f.name+'…';inf.textContent='';
+  try{
+   if(d.buf)stopD(d);
+   const ab=await f.arrayBuffer();
+   d.buf=await decode(ab);
+   d.p0=0;d.rate=1;sk.max=d.buf.duration;
+   nm.textContent=f.name+' ('+fmt(d.buf.duration)+') · analisi in corso…';
+   await new Promise(r=>setTimeout(r,40));
+   try{const r=analyze(d.buf);d.bpm=r.bpm;d.off=r.off}catch(err){d.bpm=120;d.off=0;inf.textContent='Analisi non riuscita, correggi a mano. '}
+   $('.bpm',el).value=d.bpm;nm.textContent=f.name+' ('+fmt(d.buf.duration)+')';info();
+  }catch(err){d.buf=null;nm.textContent='Errore: '+(err&&(err.name+' '+(err.message||''))||'decodifica non riuscita')+' · '+f.type+' · '+Math.round(f.size/1e6)+' MB'}
+ };
+ $('.bpm',el).oninput=e=>{d.bpm=+e.target.value||120;info()};
+ el.querySelectorAll('.nud').forEach(b=>b.onclick=()=>{d.off=Math.max(0,d.off+ +b.dataset.d);info()});
+ $('.play',el).onclick=()=>{if(!d.buf)return;ens();reset(d);start(d,d.p0,ctx.currentTime+.02,1)};
+ $('.stop',el).onclick=()=>{if(d.buf)stopD(d)};
+ const seek=v=>{if(d.playing){ens();start(d,v,ctx.currentTime+.02,rateAt(d,ctx.currentTime))}else d.p0=v};
+ $('.end',el).onclick=()=>{if(!d.buf)return;const v=Math.max(0,d.buf.duration-40);seek(v);sk.value=v};
+ sk.onpointerdown=()=>{sk.dataset.drag=1};
+ sk.onchange=()=>{delete sk.dataset.drag;if(d.buf)seek(+sk.value)};
+}
+mk('A','var(--a)');mk('B','var(--b)');
+function plan(a,n,p){const barA=240/a.bpm,rb=barA/a.rate;let k=Math.ceil((p-a.off)/barA/n)*n,w=(a.off+k*barA-p)/a.rate;while(w<1.5){k+=n;w+=n*rb}return{k,w,n,len:n*rb}}
+function mix(a,b){
+ if(!a.buf||!b.buf)return msg('Carica entrambi i brani.');
+ ens();
+ if(!a.playing)return msg('Deck '+a.id+' non sta suonando: avvialo prima.');
+ freeze(a);const now=ctx.currentTime,p=pos(a);let pl=null;
+ for(const m of [N(),4,2]){if(m>N())continue;const q=plan(a,m,p);if(q.w+q.len<=(a.buf.duration-p)/a.rate){pl=q;break}}
+ if(!pl)return msg('Deck '+a.id+' è troppo vicino alla fine per una transizione.');
+ const {k,w,n,len}=pl,T=now+w,mid=T+len/2,end=T+len,realBar=len/n;
+ const rate=$('#sync').checked?(240/b.bpm)/realBar:1;
+ const R=+$('#ret').value,rm=R&&Math.abs(rate-1)>.001?{a:end,b:end+R*realBar,to:1}:null;
+ start(b,b.off,T,rate,rm);
+ const ga=a.gain.gain,gb=b.gain.gain,la=a.low.gain,lb=b.low.gain;
+ for(const x of [ga,gb,la,lb])x.cancelScheduledValues(0);
+ ga.setValueAtTime(1,now);gb.setValueAtTime(0,now);la.setValueAtTime(0,now);
+ if($('#bass').checked){
+  lb.setValueAtTime(-40,now);
+  gb.setValueAtTime(0,T);gb.linearRampToValueAtTime(1,T+len*.25);
+  la.setTargetAtTime(-40,mid,.03);lb.setTargetAtTime(0,mid,.03);
+  ga.setValueAtTime(1,mid);ga.linearRampToValueAtTime(0,end);
+ }else{
+  lb.setValueAtTime(0,now);
+  const m=64,ca=new Float32Array(m),cb=new Float32Array(m);
+  for(let i=0;i<m;i++){const x=i/(m-1)*Math.PI/2;ca[i]=Math.cos(x);cb[i]=Math.sin(x)}
+  ga.setValueCurveAtTime(ca,T,len);gb.setValueCurveAtTime(cb,T,len);
+ }
+ try{a.src.stop(end+.05)}catch(e){}
+ mixT=T;
+ const dev=(rate-1)*100;
+ msg(`${b.id} entra sulla battuta ${k+1} di ${a.id}, ${n} battute. Tempo di ${b.id}: ${dev>=0?'+':''}${dev.toFixed(1)}%`+(rm?`, poi torna all'originale in ${R} battute`:'')+(Math.abs(dev)>6?' (oltre il 6%: si sente il cambio di tonalità)':''));
+}
+$('#mixA').onclick=()=>mix(D.A,D.B);
+$('#mixB').onclick=()=>mix(D.B,D.A);
+setInterval(()=>{
+ for(const k in D){
+  const d=D[k];if(!d.buf)continue;
+  const p=pos(d),sg=$('.seg',d.el);let t=fmt(p);
+  if(sg.children.length!==N())sg.innerHTML='<i></i>'.repeat(N());
+  for(const c of sg.children)c.className='';
+  sg.children[0].className='one';
+  const bs=(p-d.off)/(240/d.bpm),bi=Math.floor(bs),ph=((bi%N())+N())%N();
+  t+=' · battuta '+(bi+1)+' · '+(Math.floor((bs-bi)*4)+1)+'/4';
+  if(d.playing&&ctx.currentTime>=d.t0)sg.children[ph].classList.add('on');
+  const rr=d.playing?rateAt(d,ctx.currentTime):d.rate;if(Math.abs(rr-1)>.0005)t+=' · tempo '+((rr-1)*100).toFixed(1)+'%';
+  $('.tm',d.el).textContent=t;
+  const sk=$('.seek',d.el);if(!sk.dataset.drag)sk.value=p;
+ }
+ $('#cd').textContent=ctx&&mixT>ctx.currentTime?'Ingresso tra '+(mixT-ctx.currentTime).toFixed(1)+' s':'';
+},100);
+</script>
+</body>
+</html>
